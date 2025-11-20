@@ -6,7 +6,6 @@ import { PreviewArea } from "@/components/PreviewArea";
 import { LoadingOverlay } from "@/components/LoadingOverlay";
 import { useToast } from "@/hooks/use-toast";
 import { Sparkles, RotateCw, Trash2 } from "lucide-react";
-import { apiRequest } from "@/lib/queryClient";
 
 export default function TryOnPage() {
   const [selectedImage, setSelectedImage] = useState(null);
@@ -92,7 +91,19 @@ export default function TryOnPage() {
       
       formData.append("clothing", JSON.stringify(selectedClothing));
 
-      const response = await apiRequest("POST", "/api/tryon", formData);
+      // Use fetch directly for FormData uploads (apiRequest doesn't support multipart/form-data)
+      const fetchResponse = await fetch("/api/tryon", {
+        method: "POST",
+        body: formData,
+        // Don't set Content-Type header - browser will set it with boundary for multipart/form-data
+      });
+
+      if (!fetchResponse.ok) {
+        const errorData = await fetchResponse.json().catch(() => ({ error: 'Request failed' }));
+        throw new Error(errorData.error || `Request failed with status ${fetchResponse.status}`);
+      }
+
+      const response = await fetchResponse.json();
 
       if (response.success) {
         setOriginalImageResult(response.originalImage);
