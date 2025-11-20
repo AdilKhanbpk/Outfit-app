@@ -1,0 +1,169 @@
+Build a full MERN-stack Virtual Outfit Try-On Application using React (frontend), Node.js + Express (backend), and simple folder structure. Do NOT include login, signup, authentication, user accounts, or database saving. Focus completely on the UI, the backend routes, and the core try-on functionality.
+
+====================
+✨ GOAL OF THE APP
+====================
+A user uploads a full-body image, selects clothing items (shirt, coat, pants, shoes, watch) and their colors. The backend then sends this data along with the image to a HuggingFace free Virtual Try-On model. The model generates a realistic try-on image and returns it to the frontend for preview and download.
+
+====================
+🎨 FRONTEND REQUIREMENTS (React)
+====================
+1. Provide a beautiful, responsive, minimalist UI with a clean layout:
+   - A left panel for user inputs
+   - A center preview area for the output image
+   - A right panel for outfit selections
+
+2. UI Components:
+   - Image upload box (drag & drop or file select)
+   - Clothing selectors:
+       • Shirt type + color
+       • Pants type + color
+       • Shoes type + color
+       • Coat/suit type + color
+       • Watch type + color
+   - Dynamic color pickers
+   - “Generate Outfit Preview” button
+   - Loading animation while AI processes image
+   - Preview area showing:
+     • Input image
+     • Generated try-on image
+   - Buttons:
+     • Re-generate
+     • Download image
+     • Clear
+
+3. Validation:
+   - Prevent empty image uploads
+   - Prevent unsupported file types
+   - Prevent files bigger than 8MB
+   - Show friendly error messages
+
+4. Use Axios for API calls to backend.
+
+====================
+🛠 BACKEND REQUIREMENTS (Node + Express)
+====================
+Create a full Express server with these features:
+
+1. Route: POST /api/tryon
+   • Accept:
+       – User uploaded image (multipart/form-data)
+       – Clothing selections (JSON)
+   • Validate:
+       – Image size, type, existence
+       – Clothing fields
+   • Store API Keys in `.env`
+       Example:
+         HUGGINGFACE_API_KEY=YOUR_KEY_HERE
+         HF_MODEL_URL=https://api-inference.huggingface.co/models/your-selected-model
+
+2. Backend should:
+   • Convert user image to Base64
+   • Build the correct payload for HuggingFace Inference API
+   • Send the request using fetch or axios
+   • Handle HuggingFace failures, timeouts, and malformed images
+   • Return the generated output image as Base64 or buffer to frontend
+
+3. Error handling:
+   • Return structured JSON errors
+   • Catch timeouts
+   • Catch invalid responses
+   • Handle model rate limit (retry once)
+
+4. Use CORS, compression, and secured headers.
+
+====================
+🤖 HUGGINGFACE MODEL INTEGRATION
+====================
+Use one of these free models available on HuggingFace (choose whichever is easiest):
+- “zalando/virtual-try-on-diffusion”
+- “lllyasviel/sd-controlnet-openpose”
+- “diffusers/ControlNet-virtual-try-on”
+- “SOTA virtual try-on models via inference endpoints”
+You may wrap them behind a single try-on function.
+
+Backend must:
+- Send image + clothing text instructions
+- Include pose or mask conditioning if model requires it
+- Provide fallback if primary model fails
+
+====================
+🔐 ENV CONFIG (.env)
+====================
+Use environment variables to store API keys and model URL:
+
+HUGGINGFACE_API_KEY=""
+HF_MODEL_URL=""
+
+Do NOT hardcode keys.
+
+====================
+⚙️ EDGE CASES TO SUPPORT
+====================
+- User uploads no image → show error
+- Wrong image format → error
+- Image too small / low resolution → warn user
+- HuggingFace returns no image → show error message
+- Model latency delays → show long “processing” message
+- If model crashes → return "Model currently unavailable, try again"
+- Handle slow network or API timeout (30 sec max)
+- Validate clothing fields to avoid sending null data to HuggingFace
+- Frontend maintains previous result until new one is ready
+
+====================
+📁 PROJECT STRUCTURE
+====================
+Backend:
+  /server
+    /routes
+    /controllers
+    /utils/huggingface.js
+    /middleware
+    /uploads
+    server.js
+    .env
+
+Frontend:
+  /client
+    /components
+    /pages
+    /utils/api.js
+    App.js
+    index.js
+
+====================
+📦 BACKEND LIBRARIES
+====================
+Use:
+- express
+- cors
+- multer (for image upload)
+- axios
+- dotenv
+- nodemon (dev)
+
+====================
+📦 FRONTEND LIBRARIES
+====================
+Use:
+- react
+- axios
+- tailwindcss (for styling)
+- react-color for color selection
+- react-dropzone for file upload UI
+- loading spinner component
+
+====================
+🏁 FINAL OUTPUT EXPECTATIONS
+====================
+Generate:
+✔ A complete MERN project  
+✔ Frontend with full UI and functionality  
+✔ Backend with clean controllers & routes  
+✔ HuggingFace API integration  
+✔ ENV-based configuration  
+✔ Full error handling  
+✔ Image rendering end-to-end  
+✔ Ready to run locally with:
+    - "npm install"
+    - "npm run dev" (or separate client/server commands)
