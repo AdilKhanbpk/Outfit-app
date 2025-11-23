@@ -1,11 +1,19 @@
 /**
  * HuggingFace Virtual Try-On Integration
- * Uses the HuggingFace Inference API for virtual clothing try-on
+ * Uses the IDM-VTON model via Gradio Client
  */
 
-const HUGGINGFACE_API_KEY = process.env.HUGGINGFACE_API_KEY;
-const MODEL_URL = "https://api-inference.huggingface.co/models/yisol/IDM-VTON";
-const TIMEOUT_MS = 60000; // 60 seconds
+import { Client } from "@gradio/client";
+
+// Initialize Gradio client
+let client;
+
+async function getClient() {
+  if (!client) {
+    client = await Client.connect("yisol/IDM-VTON");
+  }
+  return client;
+}
 
 /**
  * Converts a Buffer to base64 string
@@ -22,119 +30,106 @@ function base64ToDataURL(base64String, mimeType = 'image/png') {
 }
 
 /**
- * Call HuggingFace Inference API for virtual try-on
- * The IDM-VTON model accepts binary image data directly
+ * Call IDM-VTON model for virtual try-on
  */
-export async function generateTryOn(imageBuffer, clothingData) {
-  if (!HUGGINGFACE_API_KEY) {
-    throw new Error('HUGGINGFACE_API_KEY is not configured');
-  }
-
+export async function generateTryOn(imageBuffer, clothingData, shirtBuffer, pantsBuffer) {
   try {
-    // Build the prompt from clothing selections
-    const prompt = buildPromptFromClothing(clothingData);
-    
-    // For IDM-VTON, we send the image as binary data
-    // The model processes the image and generates try-on results
-    const response = await fetch(MODEL_URL, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${HUGGINGFACE_API_KEY}`,
-        'Content-Type': 'application/octet-stream',
-        'x-use-cache': 'false', // Don't cache results
-      },
-      body: imageBuffer,
-      signal: AbortSignal.timeout(TIMEOUT_MS),
-    });
+    console.log('Connecting to IDM-VTON model...');
+    const app = await getClient();
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      
-      // Handle specific error cases
-      if (response.status === 503) {
-        throw new Error('Model is currently loading. Please try again in a few moments.');
-      } else if (response.status === 429) {
-        throw new Error('Rate limit exceeded. Please try again in a minute.');
-      } else if (response.status === 401) {
-        throw new Error('Invalid HuggingFace API key');
-      }
-      
-      throw new Error(`HuggingFace API error: ${errorText}`);
+    // Convert buffers to Blobs
+    const modelBlob = new Blob([imageBuffer], { type: "image/png" });
+
+    // IDM-VTON requires a single garment image
+    // If both shirt and pants are provided, prioritize shirt
+    let garmentBlob = null;
+    if (shirtBuffer) {
+      garmentBlob = new Blob([shirtBuffer], { type: "image/png" });
+    } else if (pantsBuffer) {
+      garmentBlob = new Blob([pantsBuffer], { type: "image/png" });
     }
 
-    // Get the response as a blob
-    const blob = await response.blob();
-    const arrayBuffer = await blob.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-    
-    // Convert to base64 for frontend
-    const base64Image = bufferToBase64(buffer);
-    const dataURL = base64ToDataURL(base64Image, blob.type);
+    if (!garmentBlob) {
+      throw new Error("At least one garment (shirt or pants) is required.");
+    }
+
+    console.log('Sending request to IDM-VTON...');
+
+    // IDM-VTON API expects:
+    // - dict (ImageEditor format with background, layers, composite)
+    // - garm_img (garment image Blob)
+    // - garment_des (description - string)
+    // - is_checked (boolean)
+    // - is_checked_crop (boolean)
+    // - denoise_steps (number)
+    // - seed (number)
+
+    const result = await app.predict("/tryon", [
+      {
+        background: modelBlob,
+        layers: [],
+        composite: null
+      },
+      garmentBlob,              // garment image
+      "A garment",              // garment description
+      true,                     // is_checked
+      true,                     // is_checked_crop
+      30,                       // denoise_steps
+      42,                       // seed
+    ]);
+
+    console.log('IDM-VTON response received');
+
+    // IDM-VTON returns two images: [output, masked_output]
+    const generatedImageResult = result.data[0];
+    let generatedImageBase64;
+
+    if (generatedImageResult instanceof Blob) {
+      const arrayBuffer = await generatedImageResult.arrayBuffer();
+      generatedImageBase64 = bufferToBase64(Buffer.from(arrayBuffer));
+    } else if (generatedImageResult?.url) {
+      const response = await fetch(generatedImageResult.url);
+      const arrayBuffer = await response.arrayBuffer();
+      generatedImageBase64 = bufferToBase64(Buffer.from(arrayBuffer));
+    } else if (typeof generatedImageResult === 'string' && generatedImageResult.startsWith('/')) {
+      // It might be a file path returned by the API
+      const response = await fetch(`https://yisol-idm-vton.hf.space/file=${generatedImageResult}`);
+      const arrayBuffer = await response.arrayBuffer();
+      generatedImageBase64 = bufferToBase64(Buffer.from(arrayBuffer));
+    } else if (typeof generatedImageResult === 'object' && generatedImageResult.path) {
+      // Handle file path object
+      const response = await fetch(`https://yisol-idm-vton.hf.space/file=${generatedImageResult.path}`);
+      const arrayBuffer = await response.arrayBuffer();
+      generatedImageBase64 = bufferToBase64(Buffer.from(arrayBuffer));
+    } else {
+      console.error("Unexpected result format:", result);
+      throw new Error("Failed to parse generated image from model response");
+    }
+
+    const dataURL = base64ToDataURL(generatedImageBase64, 'image/png');
 
     return {
       success: true,
       generatedImage: dataURL,
     };
   } catch (error) {
-    console.error('HuggingFace API Error:', error);
-    
-    if (error.name === 'AbortError' || error.name === 'TimeoutError') {
-      throw new Error('Request timed out. The model is taking too long to respond. Please try again.');
-    }
-    
+    console.error('IDM-VTON API Error:', error);
     throw error;
   }
 }
 
 /**
- * Build a descriptive prompt from clothing selections
- * This is currently for reference/logging - the IDM-VTON model uses the image directly
- */
-function buildPromptFromClothing(clothingData) {
-  const parts = [];
-  
-  if (clothingData.shirt) {
-    parts.push(`${clothingData.shirt.color} ${clothingData.shirt.type.toLowerCase()}`);
-  }
-  
-  if (clothingData.pants) {
-    parts.push(`${clothingData.pants.color} ${clothingData.pants.type.toLowerCase()}`);
-  }
-  
-  if (clothingData.coat) {
-    parts.push(`${clothingData.coat.color} ${clothingData.coat.type.toLowerCase()}`);
-  }
-  
-  if (clothingData.shoes) {
-    parts.push(`${clothingData.shoes.color} ${clothingData.shoes.type.toLowerCase()}`);
-  }
-  
-  if (clothingData.watch) {
-    parts.push(`${clothingData.watch.color} ${clothingData.watch.type.toLowerCase()}`);
-  }
-  
-  const prompt = parts.join(', ');
-  console.log('Virtual try-on request:', prompt);
-  return prompt;
-}
-
-/**
  * Retry logic for API calls
  */
-export async function generateTryOnWithRetry(imageBuffer, clothingData, maxRetries = 1) {
+export async function generateTryOnWithRetry(imageBuffer, clothingData, shirtBuffer, pantsBuffer, maxRetries = 1) {
   let lastError;
-  
+
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
-      return await generateTryOn(imageBuffer, clothingData);
+      return await generateTryOn(imageBuffer, clothingData, shirtBuffer, pantsBuffer);
     } catch (error) {
       lastError = error;
-      
-      // Don't retry on certain errors
-      if (error.message?.includes('Invalid') || error.message?.includes('key')) {
-        throw error;
-      }
-      
+
       // Wait before retrying (exponential backoff)
       if (attempt < maxRetries) {
         const waitTime = Math.pow(2, attempt) * 1000;
@@ -143,6 +138,6 @@ export async function generateTryOnWithRetry(imageBuffer, clothingData, maxRetri
       }
     }
   }
-  
+
   throw lastError;
 }

@@ -10,6 +10,13 @@ import { Sparkles, RotateCw, Trash2 } from "lucide-react";
 export default function TryOnPage() {
   const [selectedImage, setSelectedImage] = useState(null);
   const [imagePreviewUrl, setImagePreviewUrl] = useState(null);
+
+  // New state for garment images
+  const [shirtImage, setShirtImage] = useState(null);
+  const [shirtPreviewUrl, setShirtPreviewUrl] = useState(null);
+  const [pantsImage, setPantsImage] = useState(null);
+  const [pantsPreviewUrl, setPantsPreviewUrl] = useState(null);
+
   const [clothing, setClothing] = useState({
     shirt: undefined,
     pants: undefined,
@@ -25,14 +32,33 @@ export default function TryOnPage() {
   useEffect(() => {
     if (selectedImage) {
       const reader = new FileReader();
-      reader.onloadend = () => {
-        setImagePreviewUrl(reader.result);
-      };
+      reader.onloadend = () => setImagePreviewUrl(reader.result);
       reader.readAsDataURL(selectedImage);
     } else {
       setImagePreviewUrl(null);
     }
   }, [selectedImage]);
+
+  // Effects for garment previews
+  useEffect(() => {
+    if (shirtImage) {
+      const reader = new FileReader();
+      reader.onloadend = () => setShirtPreviewUrl(reader.result);
+      reader.readAsDataURL(shirtImage);
+    } else {
+      setShirtPreviewUrl(null);
+    }
+  }, [shirtImage]);
+
+  useEffect(() => {
+    if (pantsImage) {
+      const reader = new FileReader();
+      reader.onloadend = () => setPantsPreviewUrl(reader.result);
+      reader.readAsDataURL(pantsImage);
+    } else {
+      setPantsPreviewUrl(null);
+    }
+  }, [pantsImage]);
 
   const handleImageSelect = (file) => {
     setSelectedImage(file);
@@ -53,14 +79,15 @@ export default function TryOnPage() {
   };
 
   const hasSelectedClothing = () => {
-    return Object.values(clothing).some((item) => item !== undefined);
+    // Now check for garment images instead of just metadata
+    return shirtImage || pantsImage;
   };
 
   const handleGenerate = async () => {
     if (!selectedImage) {
       toast({
-        title: "No image selected",
-        description: "Please upload a photo before generating.",
+        title: "No model image selected",
+        description: "Please upload a photo of the person.",
         variant: "destructive",
       });
       return;
@@ -68,8 +95,8 @@ export default function TryOnPage() {
 
     if (!hasSelectedClothing()) {
       toast({
-        title: "No clothing selected",
-        description: "Please select at least one clothing item.",
+        title: "No garments selected",
+        description: "Please upload at least a shirt or pants image.",
         variant: "destructive",
       });
       return;
@@ -80,22 +107,29 @@ export default function TryOnPage() {
     try {
       const formData = new FormData();
       formData.append("image", selectedImage);
-      
-      // Only include selected clothing items
+
+      if (shirtImage) {
+        formData.append("shirt", shirtImage);
+      }
+
+      if (pantsImage) {
+        formData.append("pants", pantsImage);
+      }
+
+      // Keep existing clothing metadata logic for compatibility/logging
       const selectedClothing = {};
       Object.entries(clothing).forEach(([key, value]) => {
         if (value) {
           selectedClothing[key] = value;
         }
       });
-      
+
       formData.append("clothing", JSON.stringify(selectedClothing));
 
-      // Use fetch directly for FormData uploads (apiRequest doesn't support multipart/form-data)
+      // Use fetch directly for FormData uploads
       const fetchResponse = await fetch("/api/tryon", {
         method: "POST",
         body: formData,
-        // Don't set Content-Type header - browser will set it with boundary for multipart/form-data
       });
 
       if (!fetchResponse.ok) {
@@ -139,6 +173,8 @@ export default function TryOnPage() {
       coat: undefined,
       watch: undefined,
     });
+    setShirtImage(null);
+    setPantsImage(null);
     setOriginalImageResult(null);
     setGeneratedImage(null);
   };
@@ -234,50 +270,70 @@ export default function TryOnPage() {
 
       {/* Right Panel - Clothing Selection */}
       <div className="w-full lg:w-72 border-l border-border p-6 overflow-y-auto">
-        <div className="space-y-4">
+        <div className="space-y-6">
           <div>
             <h2 className="text-lg font-semibold font-heading text-foreground mb-1">
-              Select Outfit
+              Garment Upload
             </h2>
             <p className="text-sm text-muted-foreground">
-              Choose items and colors
+              Upload garment images
             </p>
           </div>
 
-          <ClothingSelector
-            category="shirt"
-            value={clothing.shirt}
-            onChange={(value) => handleClothingChange("shirt", value)}
-            disabled={isGenerating}
-          />
+          {/* Shirt Upload */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Shirt / Top</label>
+            <ImageUploadZone
+              onImageSelect={setShirtImage}
+              selectedImage={shirtImage}
+              onRemove={() => setShirtImage(null)}
+              previewUrl={shirtPreviewUrl}
+            />
+          </div>
 
-          <ClothingSelector
-            category="pants"
-            value={clothing.pants}
-            onChange={(value) => handleClothingChange("pants", value)}
-            disabled={isGenerating}
-          />
+          {/* Pants Upload */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Pants / Bottom</label>
+            <ImageUploadZone
+              onImageSelect={setPantsImage}
+              selectedImage={pantsImage}
+              onRemove={() => setPantsImage(null)}
+              previewUrl={pantsPreviewUrl}
+            />
+          </div>
 
-          <ClothingSelector
-            category="shoes"
-            value={clothing.shoes}
-            onChange={(value) => handleClothingChange("shoes", value)}
-            disabled={isGenerating}
-          />
+          <div className="border-t border-border pt-4">
+            <h2 className="text-lg font-semibold font-heading text-foreground mb-1">
+              Advanced Options
+            </h2>
+            <p className="text-sm text-muted-foreground mb-4">
+              Additional style preferences
+            </p>
 
-          <ClothingSelector
-            category="coat"
-            value={clothing.coat}
-            onChange={(value) => handleClothingChange("coat", value)}
-            disabled={isGenerating}
-          />
+            <div className="space-y-4 opacity-50 pointer-events-none">
+              {/* Disabled legacy selectors for now as model is image-based */}
+              <ClothingSelector
+                category="shoes"
+                value={clothing.shoes}
+                onChange={(value) => handleClothingChange("shoes", value)}
+                disabled={true}
+              />
 
-          <ClothingSelector
-            category="watch"
-            value={clothing.watch}
-            onChange={(value) => handleClothingChange("watch", value)}
-            disabled={isGenerating}
-          />
+              <ClothingSelector
+                category="coat"
+                value={clothing.coat}
+                onChange={(value) => handleClothingChange("coat", value)}
+                disabled={true}
+              />
+
+              <ClothingSelector
+                category="watch"
+                value={clothing.watch}
+                onChange={(value) => handleClothingChange("watch", value)}
+                disabled={true}
+              />
+            </div>
+          </div>
         </div>
       </div>
     </div>

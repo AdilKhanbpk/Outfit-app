@@ -23,58 +23,64 @@ export async function registerRoutes(app) {
    * POST /api/tryon
    * Handle virtual try-on requests
    */
-  app.post('/api/tryon', upload.single('image'), async (req, res) => {
+  /**
+   * POST /api/tryon
+   * Handle virtual try-on requests
+   */
+  app.post('/api/tryon', upload.fields([
+    { name: 'image', maxCount: 1 },
+    { name: 'shirt', maxCount: 1 },
+    { name: 'pants', maxCount: 1 }
+  ]), async (req, res) => {
     try {
       // Validate image upload
-      if (!req.file) {
+      if (!req.files || !req.files['image'] || !req.files['image'][0]) {
         return res.status(400).json({
           success: false,
-          error: 'No image file uploaded',
+          error: 'No model image uploaded',
         });
       }
 
-      // Validate clothing data
-      if (!req.body.clothing) {
+      const modelImageFile = req.files['image'][0];
+      const shirtFile = req.files['shirt'] ? req.files['shirt'][0] : null;
+      const pantsFile = req.files['pants'] ? req.files['pants'][0] : null;
+
+      // Validate at least one garment is uploaded
+      if (!shirtFile && !pantsFile) {
         return res.status(400).json({
           success: false,
-          error: 'No clothing data provided',
+          error: 'Please upload at least one garment (shirt or pants)',
         });
       }
 
-      let clothingData;
-      try {
-        clothingData = JSON.parse(req.body.clothing);
-      } catch (error) {
-        return res.status(400).json({
-          success: false,
-          error: 'Invalid clothing data format',
-        });
-      }
-
-      // Validate at least one clothing item is selected
-      const hasClothing = Object.keys(clothingData).length > 0 && 
-                          Object.values(clothingData).some(item => item && item.type && item.color);
-      
-      if (!hasClothing) {
-        return res.status(400).json({
-          success: false,
-          error: 'At least one clothing item must be selected',
-        });
+      // Validate clothing data (optional metadata now, but kept for compatibility if needed)
+      let clothingData = {};
+      if (req.body.clothing) {
+        try {
+          clothingData = JSON.parse(req.body.clothing);
+        } catch (error) {
+          // Ignore parse error, not critical anymore
+        }
       }
 
       // Validate image size
-      if (req.file.size > 8 * 1024 * 1024) {
+      if (modelImageFile.size > 8 * 1024 * 1024) {
         return res.status(400).json({
           success: false,
-          error: 'Image size must be less than 8MB',
+          error: 'Model image size must be less than 8MB',
         });
       }
 
       // Convert original image to base64 for response
-      const originalImageBase64 = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
+      const originalImageBase64 = `data:${modelImageFile.mimetype};base64,${modelImageFile.buffer.toString('base64')}`;
 
-      // Call HuggingFace API with retry logic
-      const result = await generateTryOnWithRetry(req.file.buffer, clothingData);
+      // Call OutfitAnyone API with retry logic
+      const result = await generateTryOnWithRetry(
+        modelImageFile.buffer,
+        clothingData,
+        shirtFile ? shirtFile.buffer : null,
+        pantsFile ? pantsFile.buffer : null
+      );
 
       // Return success response
       return res.json({
@@ -128,7 +134,7 @@ export async function registerRoutes(app) {
         error: `Upload error: ${error.message}`,
       });
     }
-    
+
     if (error.message === 'Only image files are allowed') {
       return res.status(400).json({
         success: false,
